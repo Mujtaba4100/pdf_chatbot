@@ -148,23 +148,27 @@ pdf_chatbot/
 │       ├── metadata.json    # Chunk text & source info
 │       └── documents.json   # Document registry
 │
-├── src/
-│   ├── App.jsx              # Main React component
-│   ├── App.css              # Application styles
-│   ├── index.css            # Global styles
-│   ├── main.jsx             # React entry point
-│   ├── components/
-│   │   ├── PDFUpload.jsx    # File upload component
-│   │   ├── DocumentList.jsx # Document display component
-│   │   ├── QuestionAnswer.jsx # Q&A interface
-│   │   ├── DuplicateModal.jsx # Duplicate handling modal
-│   │   ├── StatsPanel.jsx   # Statistics display
-│   │   └── Toast.jsx        # Notification component
-│   └── services/
-│       └── api.js           # API communication service
+├── frontend/
+│   ├── src/
+│   │   ├── App.jsx              # Main React component
+│   │   ├── App.css              # Application styles
+│   │   ├── index.css            # Global styles
+│   │   ├── main.jsx             # React entry point
+│   │   ├── components/
+│   │   │   ├── PDFUpload.jsx    # File upload component
+│   │   │   ├── DocumentList.jsx # Document display component
+│   │   │   ├── QuestionAnswer.jsx # Q&A interface
+│   │   │   ├── DuplicateModal.jsx # Duplicate handling modal
+│   │   │   ├── StatsPanel.jsx   # Statistics display
+│   │   │   └── Toast.jsx        # Notification component
+│   │   └── services/
+│   │       └── api.js           # API communication service
+│   ├── public/              # Static assets
+│   ├── index.html           # HTML entry point
+│   ├── package.json         # Node.js dependencies
+│   ├── vite.config.js       # Vite configuration
+│   └── eslint.config.js     # ESLint configuration
 │
-├── package.json             # Node.js dependencies
-├── vite.config.js           # Vite configuration
 └── README.md                # This file
 ```
 
@@ -204,8 +208,8 @@ pip install -r requirements.txt
 ### 3. Frontend Setup
 
 ```bash
-# From project root
-cd ..
+# From project root, navigate to frontend folder
+cd frontend
 npm install
 ```
 
@@ -245,7 +249,8 @@ The backend runs at: `http://localhost:8000`
 ### Start Frontend Development Server
 
 ```bash
-# From project root (new terminal)
+# From frontend directory (new terminal)
+cd frontend
 npm run dev
 ```
 
