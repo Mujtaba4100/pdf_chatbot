@@ -8,6 +8,7 @@ Production-ready API for:
 """
 
 import os
+import asyncio
 from typing import List, Optional
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -44,17 +45,50 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize RAG Engine (singleton)
-rag_engine: Optional[RAGEngine] = None
+# ============================================
+# RAG ENGINE WRAPPER (Non-blocking initialization)
+# ============================================
+
+class RAGEngineWrapper:
+    """Wrapper that initializes RAGEngine in background without blocking the event loop."""
+    
+    def __init__(self):
+        self.engine: Optional[RAGEngine] = None
+        self.ready: bool = False
+        self._init_task: Optional[asyncio.Task] = None
+        self._init_error: Optional[Exception] = None
+
+    async def start_background_init(self, gemini_api_key: str):
+        """Start initializing the heavy RAGEngine in a background thread."""
+        if self._init_task is None:
+            print("Starting RAG Engine initialization in background...")
+            self._init_task = asyncio.create_task(self._init_in_thread(gemini_api_key))
+
+    async def _init_in_thread(self, gemini_api_key: str):
+        """Run the blocking RAGEngine constructor in a worker thread."""
+        try:
+            # Move the heavy synchronous initialization off the main event loop
+            self.engine = await asyncio.to_thread(RAGEngine, gemini_api_key=gemini_api_key)
+            self.ready = True
+            print("✓ RAG Engine initialized successfully (background)")
+        except Exception as e:
+            self._init_error = e
+            self.ready = False
+            print(f"✗ RAG Engine initialization failed: {e}")
+
+
+# Global wrapper instance
+RAG = RAGEngineWrapper()
 
 
 def get_rag_engine() -> RAGEngine:
-    """Get or initialize the RAG engine singleton."""
-    global rag_engine
-    if rag_engine is None:
-        print("Initializing RAG Engine...")
-        rag_engine = RAGEngine(gemini_api_key=GEMINI_API_KEY)
-    return rag_engine
+    """Return the engine if ready; otherwise raise RuntimeError.
+    
+    Note: Endpoints should check RAG.ready and return 503 while initializing.
+    """
+    if RAG.engine is None:
+        raise RuntimeError("RAG engine not initialized yet")
+    return RAG.engine
 
 
 # ============================================
@@ -125,10 +159,10 @@ class DeleteResponse(BaseModel):
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize RAG engine on startup."""
+    """Start RAG engine initialization in background - server becomes responsive immediately."""
     print("Starting Multi-PDF RAG System...")
-    get_rag_engine()
-    print("RAG System ready!")
+    await RAG.start_background_init(gemini_api_key=GEMINI_API_KEY)
+    print("Server ready! (RAG engine loading in background)")
 
 
 # ============================================
@@ -153,13 +187,17 @@ async def ping():
 
 @app.get("/health")
 async def health_check():
-    """Detailed health check."""
-    engine = get_rag_engine()
-    stats = engine.get_stats()
-    return {
-        "status": "healthy",
-        **stats
-    }
+    """Detailed health check - remains responsive even while engine loads."""
+    if RAG.ready and RAG.engine is not None:
+        try:
+            stats = await asyncio.to_thread(RAG.engine.get_stats)
+            return {"status": "healthy", **stats}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    elif RAG._init_error:
+        return {"status": "error", "message": f"Initialization failed: {RAG._init_error}"}
+    else:
+        return {"status": "initializing", "message": "RAG engine is loading in background"}
 
 
 @app.post("/upload-pdfs", response_model=List[UploadResponse])
@@ -172,7 +210,10 @@ async def upload_pdfs(files: List[UploadFile] = File(...)):
     - Returns duplicate warnings with options
     - Processes and embeds new documents
     """
-    engine = get_rag_engine()
+    if not RAG.ready or RAG.engine is None:
+        raise HTTPException(status_code=503, detail="Engine is initializing, please try again in a moment")
+    
+    engine = RAG.engine
     results = []
     
     for file in files:
@@ -189,8 +230,9 @@ async def upload_pdfs(files: List[UploadFile] = File(...)):
             # Read file content
             content = await file.read()
             
-            # Process document
-            result = engine.upload_document(
+            # Process document (run in thread to avoid blocking)
+            result = await asyncio.to_thread(
+                engine.upload_document,
                 filename=file.filename,
                 file_content=content,
                 action="auto"
@@ -246,11 +288,15 @@ async def handle_duplicate(
             detail="Invalid action. Must be 'use_existing', 'replace', or 'cancel'"
         )
     
-    engine = get_rag_engine()
+    if not RAG.ready or RAG.engine is None:
+        raise HTTPException(status_code=503, detail="Engine is initializing, please try again in a moment")
+    
+    engine = RAG.engine
     
     try:
         content = await file.read()
-        result = engine.upload_document(
+        result = await asyncio.to_thread(
+            engine.upload_document,
             filename=file.filename,
             file_content=content,
             action=action
@@ -282,7 +328,10 @@ async def ask_question(request: QuestionRequest):
     - Generates answer using Gemini with retrieved context
     - Returns answer with source citations
     """
-    engine = get_rag_engine()
+    if not RAG.ready or RAG.engine is None:
+        raise HTTPException(status_code=503, detail="Engine is initializing, please try again in a moment")
+    
+    engine = RAG.engine
     
     if not request.question.strip():
         raise HTTPException(
@@ -291,7 +340,8 @@ async def ask_question(request: QuestionRequest):
         )
     
     # Check if any documents are uploaded
-    if engine.get_stats()["total_documents"] == 0:
+    stats = await asyncio.to_thread(engine.get_stats)
+    if stats["total_documents"] == 0:
         return QuestionResponse(
             answer="No documents have been uploaded yet. Please upload PDF documents first.",
             sources=[],
@@ -299,7 +349,8 @@ async def ask_question(request: QuestionRequest):
         )
     
     try:
-        result = engine.ask(
+        result = await asyncio.to_thread(
+            engine.ask,
             query=request.question,
             top_k=request.top_k or 5
         )
@@ -330,8 +381,11 @@ async def get_documents():
     - Number of chunks
     - Number of pages
     """
-    engine = get_rag_engine()
-    documents = engine.get_all_documents()
+    if not RAG.ready or RAG.engine is None:
+        raise HTTPException(status_code=503, detail="Engine is initializing, please try again in a moment")
+    
+    engine = RAG.engine
+    documents = await asyncio.to_thread(engine.get_all_documents)
     
     return [
         DocumentInfo(
@@ -355,8 +409,11 @@ async def delete_document(doc_id: str):
     - Removes embeddings from FAISS index
     - Updates persistent storage
     """
-    engine = get_rag_engine()
-    result = engine.delete_document(doc_id)
+    if not RAG.ready or RAG.engine is None:
+        raise HTTPException(status_code=503, detail="Engine is initializing, please try again in a moment")
+    
+    engine = RAG.engine
+    result = await asyncio.to_thread(engine.delete_document, doc_id)
     
     if result["status"] == "error":
         raise HTTPException(
@@ -373,8 +430,11 @@ async def delete_document(doc_id: str):
 @app.get("/stats", response_model=StatsResponse)
 async def get_stats():
     """Get system statistics."""
-    engine = get_rag_engine()
-    stats = engine.get_stats()
+    if not RAG.ready or RAG.engine is None:
+        raise HTTPException(status_code=503, detail="Engine is initializing, please try again in a moment")
+    
+    engine = RAG.engine
+    stats = await asyncio.to_thread(engine.get_stats)
     
     return StatsResponse(
         total_documents=stats["total_documents"],

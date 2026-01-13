@@ -31,6 +31,7 @@ function App() {
     const [answer, setAnswer] = useState('');
     const [sources, setSources] = useState([]);
     const [backendConnected, setBackendConnected] = useState(false);
+    const [healthLog, setHealthLog] = useState(null);
     
     // Duplicate handling
     const [duplicateInfo, setDuplicateInfo] = useState(null);
@@ -54,8 +55,10 @@ function App() {
     useEffect(() => {
         const initializeApp = async () => {
             try {
-                await api.healthCheck();
+                const health = await api.healthCheck();
+                console.log('Backend health:', health);
                 setBackendConnected(true);
+                setHealthLog(JSON.stringify(health));
                 
                 // Load documents and stats
                 const [docs, statsData] = await Promise.all([
@@ -67,7 +70,9 @@ function App() {
                 setStats(statsData);
                 addToast('Connected to RAG backend', 'success');
             } catch (error) {
+                console.error('Health check failed:', error);
                 setBackendConnected(false);
+                setHealthLog(error?.message || String(error));
                 addToast('Cannot connect to backend. Make sure the server is running.', 'error');
             }
         };
