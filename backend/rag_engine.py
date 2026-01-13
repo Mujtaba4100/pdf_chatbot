@@ -67,8 +67,8 @@ class RAGEngine:
         self.embed_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
         
         # Initialize Gemini
-        genai.configure(api_key="AIzaSyA14iwFh_CQZyS1vur9vZ0hQD8uliQue_E")
-        self.gemini_model = genai.GenerativeModel("gemini-2.0-flash")
+        genai.configure(api_key=gemini_api_key)
+        self.gemini_model = genai.GenerativeModel("gemini-2.5-flash")
         
         # Initialize or load FAISS index
         self.index: Optional[faiss.IndexFlatL2] = None

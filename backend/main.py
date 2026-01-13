@@ -14,12 +14,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from rag_engine import RAGEngine
 
+from dotenv import load_dotenv
+
 # ============================================
 # CONFIGURATION
 # ============================================
 
-# Get Gemini API key from environment or use default (for development)
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyA14iwFh_CQZyS1vur9vZ0hQD8uliQue_E")
+# Load .env file
+load_dotenv()
+
+# Now read the API key from env
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -48,7 +53,7 @@ def get_rag_engine() -> RAGEngine:
     global rag_engine
     if rag_engine is None:
         print("Initializing RAG Engine...")
-        rag_engine = RAGEngine(gemini_api_key="AIzaSyA14iwFh_CQZyS1vur9vZ0hQD8uliQue_E")
+        rag_engine = RAGEngine(gemini_api_key=GEMINI_API_KEY)
     return rag_engine
 
 
