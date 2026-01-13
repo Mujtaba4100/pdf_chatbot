@@ -515,16 +515,81 @@ ANSWER:"""
         except Exception as e:
             return f"Error generating answer: {str(e)}"
     
+    def verify_sources(self, query: str, answer: str, context_chunks: List[Dict]) -> List[int]:
+        """
+        Verify which chunks actually support the generated answer.
+        
+        Args:
+            query: User's question
+            answer: Generated answer
+            context_chunks: All retrieved chunks
+            
+        Returns:
+            List of indices of chunks that support the answer
+        """
+        if not context_chunks:
+            return []
+        
+        # Build context with numbered chunks
+        context_parts = []
+        for i, chunk in enumerate(context_chunks):
+            context_parts.append(
+                f"[{i}] Source: {chunk['source']}, Page {chunk['page']}\n{chunk['text']}"
+            )
+        context = "\n\n".join(context_parts)
+        
+        # Create verification prompt
+        prompt = f"""You are a citation verification assistant. Given a question, an answer, and numbered source chunks, identify which chunks were actually used to generate the answer.
+
+Return ONLY a comma-separated list of chunk numbers that directly support the answer (e.g., "0,2,3").
+If no chunks support the answer, return "NONE".
+Do not include explanations or any other text.
+
+QUESTION:
+{query}
+
+ANSWER:
+{answer}
+
+NUMBERED CHUNKS:
+{context}
+
+CHUNK NUMBERS THAT SUPPORT THE ANSWER:"""
+        
+        try:
+            response = self.gemini_model.generate_content(prompt)
+            result = response.text.strip()
+            
+            # Parse the response
+            if result.upper() == "NONE":
+                return []
+            
+            # Extract numbers
+            used_indices = []
+            for part in result.split(","):
+                try:
+                    idx = int(part.strip())
+                    if 0 <= idx < len(context_chunks):
+                        used_indices.append(idx)
+                except ValueError:
+                    continue
+            
+            return used_indices
+        except Exception as e:
+            print(f"Error verifying sources: {e}")
+            # Fallback: return all chunks if verification fails
+            return list(range(len(context_chunks)))
+    
     def ask(self, query: str, top_k: int = DEFAULT_TOP_K) -> Dict:
         """
-        Main query method: retrieve context and generate answer.
+        Main query method: retrieve context, generate answer, and filter sources.
         
         Args:
             query: User's question
             top_k: Number of chunks to retrieve
             
         Returns:
-            Dict with answer and sources
+            Dict with answer and verified sources
         """
         # Retrieve relevant chunks
         relevant_chunks = self.retrieve_relevant_chunks(query, top_k)
@@ -532,22 +597,28 @@ ANSWER:"""
         # Generate answer
         answer = self.generate_answer(query, relevant_chunks)
         
-        # Format sources (unique)
+        # Verify which chunks actually support the answer
+        used_indices = self.verify_sources(query, answer, relevant_chunks)
+        
+        # Filter sources to only those that support the answer
         sources = []
         seen = set()
-        for chunk in relevant_chunks:
-            source_key = f"{chunk['source']}_{chunk['page']}"
-            if source_key not in seen:
-                sources.append({
-                    "file": chunk["source"],
-                    "page": chunk["page"]
-                })
-                seen.add(source_key)
+        for idx in used_indices:
+            if idx < len(relevant_chunks):
+                chunk = relevant_chunks[idx]
+                source_key = f"{chunk['source']}_{chunk['page']}"
+                if source_key not in seen:
+                    sources.append({
+                        "file": chunk["source"],
+                        "page": chunk["page"]
+                    })
+                    seen.add(source_key)
         
         return {
             "answer": answer,
             "sources": sources,
-            "num_chunks_used": len(relevant_chunks)
+            "num_chunks_used": len(sources),
+            "num_chunks_retrieved": len(relevant_chunks)
         }
     
     # ============================================
