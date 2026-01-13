@@ -39,6 +39,10 @@ function App() {
     
     // Toast notifications
     const [toasts, setToasts] = useState([]);
+    
+    // Progressive disclosure state
+    const [showDocuments, setShowDocuments] = useState(false);
+    const [showStats, setShowStats] = useState(false);
 
     // Add toast notification
     const addToast = useCallback((message, type = 'info') => {
@@ -210,20 +214,12 @@ function App() {
 
             {/* Main Content */}
             <main className="app-main">
-                {/* Left Panel - Upload & Documents */}
+                {/* Left Panel - Upload Only */}
                 <div className="panel panel-left">
                     <PDFUpload 
                         onUpload={handleUpload}
                         isLoading={isUploading}
                     />
-                    
-                    <DocumentList
-                        documents={documents}
-                        onDelete={handleDelete}
-                        isLoading={isDeleting}
-                    />
-                    
-                    <StatsPanel stats={stats} />
                 </div>
 
                 {/* Right Panel - Q&A */}
@@ -236,6 +232,70 @@ function App() {
                     />
                 </div>
             </main>
+            
+            {/* Toolbar for progressive disclosure */}
+            <div className="toolbar">
+                <button 
+                    className="toolbar-btn"
+                    onClick={() => setShowDocuments(!showDocuments)}
+                    title="View uploaded documents"
+                >
+                    📂 Uploaded Documents ({documents.length})
+                </button>
+                <button 
+                    className="toolbar-btn"
+                    onClick={() => setShowStats(!showStats)}
+                    title="View system statistics"
+                >
+                    📊 System Stats
+                </button>
+            </div>
+            
+            {/* Documents Panel Overlay */}
+            {showDocuments && (
+                <div className="overlay" onClick={() => setShowDocuments(false)}>
+                    <div className="overlay-panel" onClick={(e) => e.stopPropagation()}>
+                        <div className="overlay-header">
+                            <h2>📂 Uploaded Documents</h2>
+                            <button 
+                                className="close-btn"
+                                onClick={() => setShowDocuments(false)}
+                                title="Close"
+                            >
+                                ✕
+                            </button>
+                        </div>
+                        <div className="overlay-content">
+                            <DocumentList
+                                documents={documents}
+                                onDelete={handleDelete}
+                                isLoading={isDeleting}
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {/* Stats Panel Overlay */}
+            {showStats && (
+                <div className="overlay" onClick={() => setShowStats(false)}>
+                    <div className="overlay-panel overlay-panel-small" onClick={(e) => e.stopPropagation()}>
+                        <div className="overlay-header">
+                            <h2>📊 System Statistics</h2>
+                            <button 
+                                className="close-btn"
+                                onClick={() => setShowStats(false)}
+                                title="Close"
+                            >
+                                ✕
+                            </button>
+                        </div>
+                        <div className="overlay-content">
+                            <StatsPanel stats={stats} />
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Footer */}
             <footer className="app-footer">
