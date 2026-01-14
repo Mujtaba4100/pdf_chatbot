@@ -31,3 +31,4 @@ metadata.json
 documents.json
 faiss.index
 ii.py
+*.md

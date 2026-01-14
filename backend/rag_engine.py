@@ -20,6 +20,17 @@ import faiss
 from sentence_transformers import SentenceTransformer
 import PyPDF2
 import google.generativeai as genai
+from PIL import Image
+import io
+
+# OCR imports (optional)
+try:
+    import pytesseract
+    
+    OCR_AVAILABLE = True
+except ImportError:
+    OCR_AVAILABLE = False
+    print("Warning: pytesseract not installed. OCR functionality will be disabled.")
 
 # ============================================
 # CONFIGURATION
@@ -169,27 +180,109 @@ class RAGEngine:
         
         return chunks
     
+    @staticmethod
+    def extract_text_from_image(image: Image.Image) -> str:
+        """
+        Extract text from an image using OCR.
+        
+        Args:
+            image: PIL Image object
+            
+        Returns:
+            Extracted text string
+        """
+        if not OCR_AVAILABLE:
+            return ""
+        
+        try:
+            # Convert to RGB if needed
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
+            
+            # Run OCR
+            text = pytesseract.image_to_string(image, lang='eng')
+            return text.strip()
+        except Exception as e:
+            print(f"OCR error: {e}")
+            return ""
+    
     def extract_text_from_pdf(self, pdf_content: bytes) -> List[Dict]:
         """
-        Extract text from PDF page by page.
+        Extract text from PDF page by page, including OCR for images.
         
         Args:
             pdf_content: Raw bytes of PDF file
             
         Returns:
-            List of dicts with page_num and text
+            List of dicts with page_num, text, and ocr_text
         """
-        import io
         pages = []
         
         try:
             reader = PyPDF2.PdfReader(io.BytesIO(pdf_content))
             for page_num, page in enumerate(reader.pages):
+                # Extract regular text
                 text = page.extract_text()
+                ocr_text = ""
+                
+                # Extract images and apply OCR
+                if OCR_AVAILABLE:
+                    try:
+                        # Get images from page
+                        if '/XObject' in page['/Resources']:
+                            xObject = page['/Resources']['/XObject'].get_object()
+                            
+                            for obj in xObject:
+                                if xObject[obj]['/Subtype'] == '/Image':
+                                    try:
+                                        # Extract image data
+                                        size = (xObject[obj]['/Width'], xObject[obj]['/Height'])
+                                        data = xObject[obj].get_data()
+                                        
+                                        # Try to create image
+                                        if xObject[obj]['/ColorSpace'] == '/DeviceRGB':
+                                            mode = "RGB"
+                                        elif xObject[obj]['/ColorSpace'] == '/DeviceGray':
+                                            mode = "L"
+                                        else:
+                                            mode = "RGB"  # Default
+                                        
+                                        try:
+                                            image = Image.frombytes(mode, size, data)
+                                            # Apply OCR
+                                            img_text = self.extract_text_from_image(image)
+                                            if img_text:
+                                                ocr_text += img_text + "\n"
+                                        except Exception as img_error:
+                                            # Try with PIL's open if frombytes fails
+                                            try:
+                                                image = Image.open(io.BytesIO(data))
+                                                img_text = self.extract_text_from_image(image)
+                                                if img_text:
+                                                    ocr_text += img_text + "\n"
+                                            except:
+                                                pass
+                                    except Exception as e:
+                                        # Skip this image if extraction fails
+                                        continue
+                    except Exception as e:
+                        print(f"Error extracting images from page {page_num + 1}: {e}")
+                
+                # Combine regular text and OCR text
+                combined_text = ""
                 if text and text.strip():
+                    combined_text += text.strip()
+                if ocr_text.strip():
+                    if combined_text:
+                        combined_text += "\n\n[Text from images:]\n" + ocr_text.strip()
+                    else:
+                        combined_text = ocr_text.strip()
+                
+                if combined_text:
                     pages.append({
                         "page_num": page_num + 1,
-                        "text": text
+                        "text": combined_text,
+                        "has_ocr": bool(ocr_text.strip())
                     })
         except Exception as e:
             print(f"Error extracting PDF text: {e}")
@@ -201,7 +294,7 @@ class RAGEngine:
                     chunk_size: int = DEFAULT_CHUNK_SIZE,
                     overlap_size: int = DEFAULT_OVERLAP_SIZE) -> List[Dict]:
         """
-        Process a PDF: extract text, chunk it, and prepare metadata.
+        Process a PDF: extract text (including OCR), chunk it, and prepare metadata.
         
         Args:
             filename: Original filename
@@ -227,7 +320,8 @@ class RAGEngine:
                 chunks_metadata.append({
                     "text": chunk_text,
                     "source": filename,
-                    "page": page_info["page_num"]
+                    "page": page_info["page_num"],
+                    "has_ocr": page_info.get("has_ocr", False)
                 })
         
         return chunks_metadata

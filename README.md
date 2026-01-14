@@ -89,6 +89,7 @@ A production-ready, full-stack Retrieval-Augmented Generation (RAG) application 
 ### Backend Features
 - ✅ Multiple PDF upload processing
 - ✅ Page-wise text extraction with PyPDF2
+- ✅ **OCR support for extracting text from images in PDFs** (Tesseract)
 - ✅ Text chunking with configurable overlap
 - ✅ Embedding generation using all-MiniLM-L6-v2
 - ✅ FAISS vector storage for fast similarity search
@@ -96,11 +97,13 @@ A production-ready, full-stack Retrieval-Augmented Generation (RAG) application 
 - ✅ Duplicate detection via SHA-256 hashing
 - ✅ Document registry management
 - ✅ Context-grounded answer generation with Gemini
+- ✅ **Smart source verification - only cites chunks that support the answer**
 - ✅ Source citations with file and page numbers
 
 ### Frontend Features
 - ✅ Drag-and-drop PDF upload
 - ✅ Multiple file selection
+- ✅ **Progressive disclosure UI - clean, focused interface**
 - ✅ Uploaded documents list with metadata
 - ✅ Duplicate document warning modal
 - ✅ Question input with loading states
@@ -122,6 +125,8 @@ A production-ready, full-stack Retrieval-Augmented Generation (RAG) application 
 | **SentenceTransformers** | Text embeddings |
 | **Google Gemini** | LLM for answer generation |
 | **PyPDF2** | PDF text extraction |
+| **Tesseract OCR** | Extract text from images |
+| **Pillow** | Image processing |
 | **Pydantic** | Data validation |
 | **Uvicorn** | ASGI server |
 
@@ -181,6 +186,7 @@ pdf_chatbot/
 - Python 3.10 or higher
 - Node.js 18 or higher
 - npm or yarn
+- **Tesseract OCR** (for image text extraction - see [OCR Setup Guide](OCR_SETUP.md))
 
 ### 1. Clone/Navigate to Project
 
@@ -205,7 +211,22 @@ cd backend
 pip install -r requirements.txt
 ```
 
-### 3. Frontend Setup
+### 3. OCR Setup (Optional but Recommended)
+
+To enable text extraction from images in PDFs:
+
+**Quick Setup (Windows):**
+```powershell
+# Run the automated setup script
+.\install_ocr.ps1
+```
+
+**Manual Setup:**
+See [OCR_SETUP.md](OCR_SETUP.md) for detailed instructions.
+
+**Note:** The system works without OCR but will skip image text extraction. If Tesseract is not installed, you'll see a warning message, but regular PDF text extraction continues normally.
+
+### 4. Frontend Setup
 
 ```bash
 # From project root, navigate to frontend folder
@@ -213,7 +234,7 @@ cd frontend
 npm install
 ```
 
-### 4. Configure API Key (Optional)
+### 5. Configure API Key (Optional)
 
 The Gemini API key is pre-configured. To use your own:
 
